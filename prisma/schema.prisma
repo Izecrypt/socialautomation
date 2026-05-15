@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SourcePriority {
+  high
+  medium
+  low
+}
+
+enum CheckFrequency {
+  mins_5
+  mins_15
+  mins_30
+  mins_60
+}
+
+enum SourceStatus {
+  active
+  paused
+}
+
+enum RssItemStatus {
+  new
+  ignored
+  duplicate
+  queued
+  generated
+  approved
+  scheduled
+  posted
+  failed
+  rejected
+}
+
+enum GeneratedPostStatus {
+  draft
+  needs_review
+  approved
+  scheduled
+  posted
+  failed
+  rejected
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+}
+
+enum Platform {
+  x
+  telegram
+  instagram
+  tiktok
+  youtube_shorts
+}
+
+model Source {
+  id               String         @id @default(uuid()) @db.Uuid
+  name             String
+  feedUrl          String         @map("feed_url")
+  category         String
+  priority         SourcePriority @default(medium)
+  checkFrequency   CheckFrequency @default(mins_15) @map("check_frequency")
+  keywords         String[]       @default([])
+  excludedKeywords String[]       @default([]) @map("excluded_keywords")
+  status           SourceStatus   @default(active)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  rssItems RssItem[]
+
+  @@index([status])
+  @@index([priority])
+  @@map("sources")
+}
+
+model RssItem {
+  id               String        @id @default(uuid()) @db.Uuid
+  sourceId         String?       @map("source_id") @db.Uuid
+  sourceName       String        @map("source_name")
+  feedUrl          String        @map("feed_url")
+  title            String
+  summary          String        @default("")
+  articleUrl       String        @map("article_url")
+  publishedAt      DateTime?     @map("published_at")
+  rawPayload       Json?         @map("raw_payload")
+  relevanceScore   Int           @default(0) @map("relevance_score")
+  detectedKeywords String[]      @default([]) @map("detected_keywords")
+  isDuplicate      Boolean       @default(false) @map("is_duplicate")
+  status           RssItemStatus @default(new)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  source         Source?         @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  generatedPosts GeneratedPost[]
+
+  @@unique([articleUrl])
+  @@index([status])
+  @@index([sourceName])
+  @@index([relevanceScore])
+  @@index([createdAt])
+  @@map("rss_items")
+}
+
+model GeneratedPost {
+  id           String              @id @default(uuid()) @db.Uuid
+  rssItemId    String              @map("rss_item_id") @db.Uuid
+  platform     Platform
+  contentType  String              @map("content_type")
+  contentText  String              @map("content_text") @db.Text
+  hook         String?
+  hashtags     String[]            @default([])
+  imagePrompt  String?             @map("image_prompt") @db.Text
+  mediaUrl     String?             @map("media_url")
+  riskScore    RiskLevel           @default(medium) @map("risk_score")
+  safetyNotes  String[]            @default([]) @map("safety_notes")
+  status       GeneratedPostStatus @default(draft)
+  scheduledAt  DateTime?           @map("scheduled_at")
+  metadata     Json?
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  rssItem        RssItem         @relation(fields: [rssItemId], references: [id], onDelete: Cascade)
+  scheduledPosts ScheduledPost[]
+  publishLogs    PublishLog[]
+  mediaAssets    MediaAsset[]
+
+  @@index([platform])
+  @@index([status])
+  @@index([riskScore])
+  @@index([scheduledAt])
+  @@index([rssItemId])
+  @@map("generated_posts")
+}
+
+model MediaAsset {
+  id              String   @id @default(uuid()) @db.Uuid
+  generatedPostId String   @map("generated_post_id") @db.Uuid
+  assetType       String   @map("asset_type")
+  url             String?
+  prompt          String?  @db.Text
+  status          String   @default("placeholder")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  generatedPost GeneratedPost @relation(fields: [generatedPostId], references: [id], onDelete: Cascade)
+
+  @@index([generatedPostId])
+  @@map("media_assets")
+}
+
+model ScheduledPost {
+  id              String    @id @default(uuid()) @db.Uuid
+  generatedPostId String    @map("generated_post_id") @db.Uuid
+  platform        Platform
+  scheduledAt     DateTime  @map("scheduled_at")
+  status          String    @default("pending")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  generatedPost GeneratedPost @relation(fields: [generatedPostId], references: [id], onDelete: Cascade)
+
+  @@index([platform])
+  @@index([scheduledAt])
+  @@index([status])
+  @@map("scheduled_posts")
+}
+
+model PublishLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  generatedPostId String?  @map("generated_post_id") @db.Uuid
+  platform        Platform?
+  action          String
+  status          String
+  message         String?  @db.Text
+  payload         Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  generatedPost GeneratedPost? @relation(fields: [generatedPostId], references: [id], onDelete: SetNull)
+
+  @@index([platform])
+  @@index([status])
+  @@index([createdAt])
+  @@map("publish_logs")
+}
+
+model PlatformAccount {
+  id        String   @id @default(uuid()) @db.Uuid
+  platform  Platform @unique
+  name      String
+  config    Json?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_accounts")
+}
+
+model AppSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+model BrandVoiceSetting {
+  id                String   @id @default(uuid()) @db.Uuid
+  brandName         String   @map("brand_name")
+  tone              String
+  forbiddenWords    String[] @default([]) @map("forbidden_words")
+  preferredPhrases  String[] @default([]) @map("preferred_phrases")
+  postingStyle      String   @map("posting_style")
+  maxHypeLevel      Int      @default(3) @map("max_hype_level")
+  disclaimerStyle   String   @map("disclaimer_style")
+  targetPlatforms   String[] @default([]) @map("target_platforms")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("brand_voice_settings")
+}
+
+model MakeWebhookLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  endpoint     String
+  method       String
+  statusCode   Int?     @map("status_code")
+  requestBody  Json?    @map("request_body")
+  responseBody Json?    @map("response_body")
+  error        String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([endpoint])
+  @@index([createdAt])
+  @@map("make_webhook_logs")
+}
+
+model IngestLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  sourceId  String?  @map("source_id") @db.Uuid
+  action    String
+  status    String
+  message   String?  @db.Text
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("ingest_logs")
+}
