@@ -2,10 +2,23 @@
 
 Deploy **Crypto Pulse** (RSS → AI → social queue) on a Linux VPS with PostgreSQL, PM2, Nginx, HTTPS, and **cron** for RSS ingestion.
 
+## One domain is enough
+
+This is a **single Next.js app**: dashboard UI and API routes (`/api/...`) live on the same origin. You do **not** need separate frontend/backend domains or subdomains.
+
+Example: `https://crypto.yourdomain.com` serves:
+
+- `/dashboard` — UI
+- `/api/cron/fetch-rss` — cron ingest
+- `/api/queue/next-post` — Make.com
+- etc.
+
+Nginx proxies everything to one Node process (default port **3009** on the VPS).
+
 ## Architecture
 
 ```text
-Internet → Nginx (443) → Next.js (PM2, :3000) → PostgreSQL
+Internet → Nginx (443) → Next.js (PM2, :3009) → PostgreSQL
                 ↑
     Make.com webhooks / cron → /api/cron/fetch-rss
 ```
@@ -131,8 +144,11 @@ MAKE_PUBLISH_WEBHOOK_SECRET=<random-hex>
 CRON_SECRET=<random-hex>
 
 APP_BASE_URL=https://crypto.yourdomain.com
+PORT=3009
 DEFAULT_TIMEZONE=Africa/Lagos
 ```
+
+`PORT=3009` avoids clashing with other services on `:3000`. Nginx still listens on 80/443; only the internal Node port changes.
 
 Generate secrets:
 
@@ -170,14 +186,20 @@ npm run build
 
 ---
 
-## 7. Run with PM2
+## 7. Run with PM2 (port 3009)
 
 ```bash
 npm install -g pm2
-pm2 start npm --name "crypto-pulse" -- start
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 # Run the command PM2 prints to enable boot on startup
+```
+
+Or without the config file:
+
+```bash
+PORT=3009 pm2 start npm --name "crypto-pulse" -- start
 ```
 
 Verify locally on the server:
@@ -185,7 +207,7 @@ Verify locally on the server:
 ```bash
 pm2 status
 pm2 logs crypto-pulse
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/dashboard
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3009/dashboard
 ```
 
 ---
@@ -202,7 +224,7 @@ server {
     server_name crypto.yourdomain.com;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3009;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -367,7 +389,7 @@ pm2 restart crypto-pulse
 | `401` on `/api/cron/fetch-rss` | `x-cron-secret` must match `CRON_SECRET` in `.env` |
 | Cron runs but no items | Check `/var/log/crypto-pulse-rss.log`; some feeds block or timeout |
 | DB connection error | Verify Postgres is up; test `DATABASE_URL` |
-| 502 from Nginx | `pm2 status` — app must be running on port 3000 |
+| 502 from Nginx | `pm2 status` — app must be running on port 3009 (`curl http://127.0.0.1:3009/dashboard`) |
 | AI generate slow | Normal; VPS has no serverless timeout unlike Vercel Hobby |
 
 ---

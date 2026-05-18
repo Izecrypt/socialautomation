@@ -36,7 +36,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open [http://localhost:3000/dashboard](http://localhost:3000/dashboard).
+Open [http://localhost:3009/dashboard](http://localhost:3009/dashboard).
 
 ### 3. Environment
 
@@ -64,7 +64,7 @@ Add `OPENAI_API_KEY` for real AI generation (otherwise mock content is used).
 Internal RSS fetch (cron):
 
 ```bash
-curl -H "x-cron-secret: $CRON_SECRET" http://localhost:3000/api/cron/fetch-rss
+curl -H "x-cron-secret: $CRON_SECRET" http://localhost:3009/api/cron/fetch-rss
 ```
 
 ## Docs
