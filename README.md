@@ -74,7 +74,7 @@ curl -H "x-cron-secret: $CRON_SECRET" http://localhost:3000/api/cron/fetch-rss
 - [RSS sources](docs/rss-sources.md)
 - [AI prompts](docs/ai-prompts.md)
 - [Database](docs/database.md)
-- [Deployment](docs/deployment.md)
+- [VPS deployment](docs/deployment.md) (cron RSS fetch, PM2, Nginx)
 
 ## Scripts
 
