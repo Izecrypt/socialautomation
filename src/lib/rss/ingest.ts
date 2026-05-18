@@ -6,6 +6,8 @@ import {
   relevanceDecision,
   statusFromDecision,
 } from "@/lib/scoring/relevance";
+import { hasCryptoAiKeyword } from "@/lib/keywords/detection";
+import { getSchedulingSettings } from "@/lib/scheduling/settings";
 import type { RssItemWebhookInput } from "@/lib/validation/schemas";
 import type { SourcePriority } from "@/generated/prisma/client";
 
@@ -70,7 +72,22 @@ export async function ingestRssItem(
         isTitleDuplicate: dupCheck.reason === "title",
       });
 
-  const decision = hasExcluded ? "ignore" : relevanceDecision(relevanceScore);
+  let decision = hasExcluded ? "ignore" : relevanceDecision(relevanceScore);
+
+  const scheduling = await getSchedulingSettings();
+  if (
+    scheduling.nicheMode === "crypto_ai" &&
+    decision === "queue" &&
+    !isDuplicate
+  ) {
+    const isAiNiche =
+      hasCryptoAiKeyword(mergedKeywords) ||
+      source?.category === "AI Crypto";
+    if (!isAiNiche) {
+      decision = "watchlist";
+    }
+  }
+
   const status = statusFromDecision(decision, isDuplicate);
 
   const item = await prisma.rssItem.create({

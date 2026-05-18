@@ -12,7 +12,14 @@ import type {
   RiskCheckResult,
 } from "@/lib/ai/types";
 import { RISK_FILTER_PROMPT } from "@/lib/ai/prompts";
-import type { Platform, RiskLevel } from "@/generated/prisma/client";
+import type { RiskLevel } from "@/generated/prisma/client";
+import { getSchedulingSettings } from "@/lib/scheduling/settings";
+import {
+  generateImagesForRssPosts,
+  generateImageForPost,
+  isImageGenerationEnabled,
+  shouldGenerateOnApprove,
+} from "@/lib/ai/images";
 
 function mapRisk(r: string): RiskLevel {
   if (r === "high") return "high";
@@ -152,6 +159,28 @@ export async function generateFromRssItem(rssItemId: string) {
   });
   posts.push(videoPost);
 
+  const ytPost = await prisma.generatedPost.create({
+    data: {
+      rssItemId,
+      platform: "youtube_shorts",
+      contentType: "short_video",
+      contentText: bundle.short_video.script,
+      hook: bundle.short_video.hook,
+      hashtags: bundle.short_video.hashtags,
+      imagePrompt: bundle.image_prompt,
+      riskScore: mapRisk(bundle.short_video.risk_score),
+      safetyNotes: bundle.safety_notes,
+      metadata: {
+        title: bundle.short_video.title,
+        visual_suggestions: bundle.short_video.visual_suggestions,
+        caption: bundle.short_video.caption,
+        platform_note: "YouTube Shorts — vertical 9:16, hook in first 3 seconds",
+      },
+      status: resolveInitialStatus(bundle.short_video.risk_score, settings),
+    },
+  });
+  posts.push(ytPost);
+
   await prisma.mediaAsset.create({
     data: {
       generatedPostId: xPost.id,
@@ -176,8 +205,14 @@ export async function generateFromRssItem(rssItemId: string) {
     },
   });
 
+  if (isImageGenerationEnabled() && !shouldGenerateOnApprove()) {
+    await generateImagesForRssPosts(posts.map((p) => p.id));
+  }
+
   return { summary, posts, bundle };
 }
+
+export { generateImageForPost };
 
 function resolveInitialStatus(
   risk: string,
@@ -270,70 +305,3 @@ function heuristicRiskCheck(text: string): RiskCheckResult {
   };
 }
 
-export interface SchedulingSettings {
-  platforms: Record<
-    Platform,
-    {
-      postsPerHour?: number;
-      postsPerDay?: number;
-      everyNDays?: number;
-      activeHoursStart: number;
-      activeHoursEnd: number;
-      minGapMinutes: number;
-    }
-  >;
-  timezone: string;
-  autoPostRiskLevel: RiskLevel;
-  approvalRequired: boolean;
-  duplicateTopicCooldownHours: number;
-}
-
-export async function getSchedulingSettings(): Promise<
-  SchedulingSettings & { approvalRequired: boolean }
-> {
-  const row = await prisma.appSetting.findUnique({
-    where: { key: "scheduling" },
-  });
-
-  const defaults: SchedulingSettings = {
-    platforms: {
-      x: { postsPerHour: 2, activeHoursStart: 8, activeHoursEnd: 22, minGapMinutes: 30 },
-      telegram: {
-        postsPerHour: 2,
-        activeHoursStart: 8,
-        activeHoursEnd: 22,
-        minGapMinutes: 30,
-      },
-      instagram: {
-        postsPerDay: 1,
-        activeHoursStart: 10,
-        activeHoursEnd: 20,
-        minGapMinutes: 1440,
-      },
-      tiktok: {
-        everyNDays: 2,
-        activeHoursStart: 12,
-        activeHoursEnd: 21,
-        minGapMinutes: 2880,
-      },
-      youtube_shorts: {
-        everyNDays: 2,
-        activeHoursStart: 12,
-        activeHoursEnd: 21,
-        minGapMinutes: 2880,
-      },
-    },
-    timezone: process.env.DEFAULT_TIMEZONE ?? "Africa/Lagos",
-    autoPostRiskLevel: "low",
-    approvalRequired: true,
-    duplicateTopicCooldownHours: 6,
-  };
-
-  if (!row?.value) {
-    return { ...defaults, approvalRequired: defaults.approvalRequired };
-  }
-
-  return { ...defaults, ...(row.value as object), approvalRequired: true } as SchedulingSettings & {
-    approvalRequired: boolean;
-  };
-}

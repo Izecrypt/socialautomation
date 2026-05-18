@@ -2,27 +2,50 @@
 
 Base URL: `APP_BASE_URL` (e.g. `https://your-app.com`)
 
-Headers for publish/queue endpoints:
+## Authentication headers
+
+| Endpoint group | Header | Env variable |
+|----------------|--------|--------------|
+| RSS ingest | `x-make-webhook-secret` | `MAKE_RSS_WEBHOOK_SECRET` |
+| Queue / approve / mark posted | `x-make-webhook-secret` | `MAKE_PUBLISH_WEBHOOK_SECRET` |
+
+---
+
+## Recommended schedules
+
+| Task | Interval | Endpoint |
+|------|----------|----------|
+| RSS ingest (optional if using app cron) | Every 15 min | `POST /api/webhooks/rss-item` |
+| AI generation | Every 10–15 min | `POST /api/ai/generate-from-rss/{rssItemId}` |
+| X publisher | Every 20–30 min | `GET /api/queue/next-post?platform=x` |
+| Telegram publisher | Every 20–30 min | `GET ...?platform=telegram` |
+| Instagram | Daily | `GET ...?platform=instagram` |
+| TikTok script | Every 2 days | `GET ...?platform=tiktok` |
+| YouTube Shorts | Every 2 days | `GET ...?platform=youtube_shorts` |
+
+Configure exact rates in **Dashboard → Settings → Posting schedule** (posts/hour, posts/day, every N days).
+
+---
+
+## Approval before publish
+
+`GET /api/queue/next-post` only returns posts with status **`approved`** or **`scheduled`**.
+
+Headless approve (low/medium risk only):
 
 ```
-x-make-webhook-secret: <MAKE_PUBLISH_WEBHOOK_SECRET>
+POST /api/queue/approve/{generatedPostId}
+Header: x-make-webhook-secret: <MAKE_PUBLISH_WEBHOOK_SECRET>
 ```
 
-RSS webhook header:
-
-```
-x-make-webhook-secret: <MAKE_RSS_WEBHOOK_SECRET>
-```
+High-risk posts return `403` and must be approved in the dashboard.
 
 ---
 
 ## Scenario 1: RSS News Monitor
 
-1. **RSS** → Watch RSS feed items (per source or bundled)
-2. **Filter** → Optional category/keyword filter
-3. **HTTP** → POST `/api/webhooks/rss-item`
-
-**Body example:**
+1. **RSS** → Watch RSS feed items
+2. **HTTP** → `POST /api/webhooks/rss-item`
 
 ```json
 {
@@ -36,40 +59,38 @@ x-make-webhook-secret: <MAKE_RSS_WEBHOOK_SECRET>
 }
 ```
 
-**Response example:**
+---
+
+## Scenario 2: AI Content Generation
+
+1. List queued items (custom DB/HTTP module) or use app dashboard
+2. `POST /api/ai/generate-from-rss/{{rssItemId}}`
+3. Optionally `POST /api/queue/approve/{{postId}}` for low-risk auto flow
+
+---
+
+## Scenario 3–6: Platform publishers
+
+1. `GET /api/queue/next-post?platform=x` (or telegram, instagram, tiktok, youtube_shorts)
+2. If `data.post` is not null:
 
 ```json
 {
-  "success": true,
-  "data": {
+  "post": {
     "id": "uuid",
-    "status": "queued",
-    "relevanceScore": 12,
-    "detectedKeywords": ["bitcoin", "etf"],
-    "isDuplicate": false,
-    "message": "RSS item saved as queued"
+    "platform": "x",
+    "content_text": "...",
+    "hook": "...",
+    "hashtags": [],
+    "image_prompt": "...",
+    "media_url": "https://...",
+    "risk_score": "low"
   }
 }
 ```
 
----
-
-## Scenario 2: AI Content Generation Trigger
-
-1. **Schedule** → Every 10–15 minutes
-2. **HTTP** → Query app for `rss_items` with `status=queued` (or use dashboard)
-3. **HTTP** → POST `/api/ai/generate-from-rss/{{rssItemId}}`
-
----
-
-## Scenario 3: X/Twitter Publisher
-
-1. **Schedule** → Every 30 minutes
-2. **HTTP GET** → `/api/queue/next-post?platform=x`
-3. If `data.post` exists → Buffer/Publer module
-4. **HTTP POST** → `/api/queue/mark-posted` or `mark-failed`
-
-**mark-posted body:**
+3. Send to **Buffer** or **Publer** (include `media_url` when present for image posts)
+4. `POST /api/queue/mark-posted`:
 
 ```json
 {
@@ -80,28 +101,25 @@ x-make-webhook-secret: <MAKE_RSS_WEBHOOK_SECRET>
 }
 ```
 
----
-
-## Scenario 4: Telegram Publisher
-
-Same as Scenario 3 with `platform=telegram`, then Telegram Bot `sendMessage` or app's direct endpoint.
+On failure: `POST /api/queue/mark-failed` with `{ "generated_post_id", "platform", "error" }`.
 
 ---
 
-## Scenario 5: Instagram Publisher
+## Scenario 7: Short video (TikTok / YouTube Shorts)
 
-Schedule daily → `platform=instagram` → Buffer/Publer.
+Same as publishers above; `content_text` contains the script. Upload video manually or via a video tool in Make, then `mark-posted`.
 
 ---
 
-## Scenario 6: Short Video Workflow
+## Cron alternative (no Make for ingest)
 
-Every 2 days → `platform=tiktok` → manual/video tool → mark posted.
+```bash
+curl -H "x-cron-secret: $CRON_SECRET" $APP_BASE_URL/api/cron/fetch-rss
+```
 
 ---
 
 ## Failure / retry
 
-- On publish failure: `POST /api/queue/mark-failed` with `{ "error": "..." }`
-- Or `POST /api/webhooks/platform-response` with `status: "failed"`
-- Retry failed posts from dashboard Content Queue
+- `POST /api/webhooks/platform-response` with `status: "failed"` or `"posted"`
+- Retry from dashboard **Content Queue**

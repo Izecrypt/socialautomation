@@ -24,7 +24,9 @@ Source: {{source_name}}
 URL: {{article_url}}
 Keywords: {{detected_keywords}}`;
 
-export const PLATFORM_CONTENT_PROMPT = `You are creating content for a crypto news/opinion social media brand.
+export const PLATFORM_CONTENT_PROMPT = `You are creating content for a Crypto AI news and opinion brand.
+
+Focus on the intersection of crypto and AI: agents, decentralized compute, DePIN, GPU networks, data networks, and related tokens (e.g. TAO, RNDR, FET, NEAR) when mentioned in the news.
 
 The content must be based only on the provided RSS news item and summary.
 
@@ -42,8 +44,9 @@ Generate content for:
 - Telegram
 - Instagram caption
 - Instagram carousel outline
-- TikTok/YouTube Shorts script
-- image prompt
+- TikTok script (30-60 sec, hook in first 3 seconds, faceless/b-roll visual suggestions)
+- YouTube Shorts (same script style, 9:16 vertical, clear CTA at end)
+- image prompt (futuristic crypto AI aesthetic, no fake logos or price claims)
 
 Return valid JSON:
 {

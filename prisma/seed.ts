@@ -86,6 +86,7 @@ async function main() {
         autoPostRiskLevel: "low",
         approvalRequired: true,
         duplicateTopicCooldownHours: 6,
+        nicheMode: "crypto_ai",
       },
     },
     update: {},

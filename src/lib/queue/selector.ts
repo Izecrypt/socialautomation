@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
-import { getSchedulingSettings } from "@/lib/ai/generator";
+import { getSchedulingSettings } from "@/lib/scheduling/settings";
+import { isPlatformRateLimited } from "@/lib/scheduling/enforcement";
 import type { Platform } from "@/generated/prisma/client";
-import { subHours, subMinutes } from "date-fns";
+import { subHours } from "date-fns";
 
 function isWithinActiveHours(
   hour: number,
@@ -42,17 +43,8 @@ export async function selectNextPost(platform: Platform) {
     return null;
   }
 
-  const minGap = platformSettings?.minGapMinutes ?? 30;
-  const since = subMinutes(new Date(), minGap);
-
-  const recentPosted = await prisma.generatedPost.findFirst({
-    where: {
-      platform,
-      status: "posted",
-      updatedAt: { gte: since },
-    },
-  });
-  if (recentPosted) return null;
+  const rateLimit = await isPlatformRateLimited(platform, settings);
+  if (rateLimit.limited) return null;
 
   const cooldownSince = subHours(
     new Date(),
@@ -64,10 +56,7 @@ export async function selectNextPost(platform: Platform) {
       platform,
       status: { in: ["approved", "scheduled"] },
       riskScore: { not: "high" },
-      OR: [
-        { scheduledAt: { lte: new Date() } },
-        { scheduledAt: null },
-      ],
+      OR: [{ scheduledAt: { lte: new Date() } }, { scheduledAt: null }],
     },
     include: {
       rssItem: true,

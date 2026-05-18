@@ -10,7 +10,12 @@ MVP for monitoring crypto/AI RSS feeds, scoring relevance, generating platform-s
 - **Deduplication** — URL exact match + title similarity (24h window)
 - **AI content generation** — X, Telegram, Instagram, TikTok/Shorts scripts + image prompts
 - **Risk/safety review** — Low/medium/high classification
-- **Content queue** — Approval workflow + Make.com publisher endpoints
+- **Content queue** — Approval workflow + per-platform rate limits (X/TG per hour, IG per day, video every N days)
+- **Configurable scheduling UI** — Settings page with helper text for each platform
+- **YouTube Shorts** — Separate generated post per RSS item (alongside TikTok)
+- **Crypto AI niche mode** — Auto-queue only AI-related stories when enabled
+- **Image generation** — Optional OpenAI DALL·E (`IMAGE_GENERATION_ENABLED=true`)
+- **Headless approve** — `POST /api/queue/approve/:postId` for Make/cron
 - **Dashboard** — Sources, inbox, generated content, queue, settings, logs
 
 ## Quick start

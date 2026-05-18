@@ -3,7 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { generateFromRssItem, runRiskCheck } from "@/lib/ai/generator";
+import {
+  isDiscordConfigured,
+  publishPostToDiscord,
+} from "@/lib/discord/client";
 import { sourceFormSchema } from "@/lib/validation/schemas";
+import {
+  buildSchedulingFromForm,
+  getDefaultScheduling,
+} from "@/lib/scheduling/settings";
+import {
+  generateImageForPost,
+  isImageGenerationEnabled,
+  shouldGenerateOnApprove,
+} from "@/lib/ai/images";
 
 export async function createSource(formData: FormData) {
   const raw = {
@@ -121,12 +134,82 @@ export async function updateGeneratedPost(
 }
 
 export async function approvePost(id: string) {
-  await prisma.generatedPost.update({
+  const post = await prisma.generatedPost.update({
     where: { id },
     data: { status: "approved" },
+    include: { rssItem: true },
   });
+
+  if (
+    isImageGenerationEnabled() &&
+    shouldGenerateOnApprove() &&
+    ["x", "telegram", "instagram"].includes(post.platform)
+  ) {
+    await generateImageForPost(id);
+  }
+
+  if (
+    isDiscordConfigured() &&
+    process.env.DISCORD_AUTO_PUBLISH_ON_APPROVE !== "false" &&
+    post.riskScore !== "high"
+  ) {
+    const result = await publishPostToDiscord({
+      content: post.contentText,
+      hook: post.hook,
+      platform: post.platform,
+      sourceTitle: post.rssItem.title,
+      articleUrl: post.rssItem.articleUrl,
+    });
+    await prisma.publishLog.create({
+      data: {
+        generatedPostId: id,
+        platform: post.platform,
+        action: "discord_publish",
+        status: result.ok ? "success" : "failed",
+        message: result.ok ? "Auto-sent on approve" : result.error,
+      },
+    });
+  }
+
   revalidatePath("/dashboard/generated-content");
   revalidatePath("/dashboard/content-queue");
+}
+
+export async function publishPostToDiscordAction(id: string) {
+  const post = await prisma.generatedPost.findUnique({
+    where: { id },
+    include: { rssItem: true },
+  });
+  if (!post) throw new Error("Post not found");
+  if (!isDiscordConfigured()) {
+    throw new Error("Set DISCORD_WEBHOOK_URL in .env");
+  }
+  if (post.riskScore === "high") {
+    throw new Error("High-risk posts cannot be published");
+  }
+
+  const result = await publishPostToDiscord({
+    content: post.contentText,
+    hook: post.hook,
+    platform: post.platform,
+    sourceTitle: post.rssItem.title,
+    articleUrl: post.rssItem.articleUrl,
+  });
+
+  await prisma.publishLog.create({
+    data: {
+      generatedPostId: id,
+      platform: post.platform,
+      action: "discord_publish",
+      status: result.ok ? "success" : "failed",
+      message: result.ok ? "Sent to Discord" : result.error,
+    },
+  });
+
+  if (!result.ok) throw new Error(result.error ?? "Discord send failed");
+
+  revalidatePath("/dashboard/generated-content");
+  revalidatePath("/dashboard/logs");
 }
 
 export async function rejectPost(id: string) {
@@ -160,52 +243,27 @@ export async function triggerRiskCheck(id: string) {
   revalidatePath("/dashboard/generated-content");
 }
 
+export async function saveSchedulingSettings(formData: FormData) {
+  const value = buildSchedulingFromForm(formData);
+  await prisma.appSetting.upsert({
+    where: { key: "scheduling" },
+    create: { key: "scheduling", value: value as object },
+    update: { value: value as object },
+  });
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard/content-queue");
+}
+
 export async function resetSchedulingDefaults() {
   await prisma.appSetting.upsert({
     where: { key: "scheduling" },
     create: {
       key: "scheduling",
-      value: getDefaultScheduling(),
+      value: getDefaultScheduling() as object,
     },
-    update: { value: getDefaultScheduling() },
+    update: { value: getDefaultScheduling() as object },
   });
   revalidatePath("/dashboard/settings");
-}
-
-function getDefaultScheduling() {
-  return {
-    platforms: {
-      x: { postsPerHour: 2, activeHoursStart: 8, activeHoursEnd: 22, minGapMinutes: 30 },
-      telegram: {
-        postsPerHour: 2,
-        activeHoursStart: 8,
-        activeHoursEnd: 22,
-        minGapMinutes: 30,
-      },
-      instagram: {
-        postsPerDay: 1,
-        activeHoursStart: 10,
-        activeHoursEnd: 20,
-        minGapMinutes: 1440,
-      },
-      tiktok: {
-        everyNDays: 2,
-        activeHoursStart: 12,
-        activeHoursEnd: 21,
-        minGapMinutes: 2880,
-      },
-      youtube_shorts: {
-        everyNDays: 2,
-        activeHoursStart: 12,
-        activeHoursEnd: 21,
-        minGapMinutes: 2880,
-      },
-    },
-    timezone: process.env.DEFAULT_TIMEZONE ?? "Africa/Lagos",
-    autoPostRiskLevel: "low",
-    approvalRequired: true,
-    duplicateTopicCooldownHours: 6,
-  };
 }
 
 export async function saveSettings(key: string, value: object) {

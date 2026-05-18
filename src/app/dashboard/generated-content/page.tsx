@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   approvePost,
+  publishPostToDiscordAction,
   rejectPost,
   triggerRiskCheck,
 } from "@/app/actions/dashboard";
@@ -118,6 +119,11 @@ export default async function GeneratedContentPage({
                 <form action={triggerRiskCheck.bind(null, post.id)}>
                   <Button type="submit" variant="secondary" className="px-3 py-1 text-xs">
                     Risk check
+                  </Button>
+                </form>
+                <form action={publishPostToDiscordAction.bind(null, post.id)}>
+                  <Button type="submit" variant="secondary" className="px-3 py-1 text-xs">
+                    Send to Discord
                   </Button>
                 </form>
               </div>
