@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { jsonError, jsonOk } from "@/lib/api/response";
 import { selectNextPost } from "@/lib/queue/selector";
 import { validateWebhookSecret } from "@/lib/security/webhook";
+import { toAbsoluteUrl } from "@/lib/media/url";
 import type { Platform } from "@/generated/prisma/client";
 import { z } from "zod";
 
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
       hook: post.hook,
       hashtags: post.hashtags,
       image_prompt: post.imagePrompt,
-      media_url: post.mediaUrl,
+      media_url: toAbsoluteUrl(post.mediaUrl),
       risk_score: post.riskScore,
       rss_item: {
         id: post.rssItem.id,

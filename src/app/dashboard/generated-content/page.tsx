@@ -7,9 +7,12 @@ import {
   approvePost,
   publishPostToDiscordAction,
   rejectPost,
+  triggerGenerateVideo,
   triggerRiskCheck,
 } from "@/app/actions/dashboard";
 import { PostEditor } from "@/components/posts/post-editor";
+import { GenerateVideoButton } from "@/components/posts/generate-video-button";
+import { isPlatformVideo, isVideoGenerationEnabled } from "@/lib/ai/video";
 
 export default async function GeneratedContentPage({
   searchParams,
@@ -28,6 +31,7 @@ export default async function GeneratedContentPage({
   });
 
   const platforms = ["x", "telegram", "instagram", "tiktok", "youtube_shorts"];
+  const videoEnabled = isVideoGenerationEnabled();
 
   return (
     <div className="space-y-8">
@@ -60,7 +64,7 @@ export default async function GeneratedContentPage({
           {posts.map((post) => (
             <Card key={post.id}>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Badge variant="info">{post.platform}</Badge>
                   <Badge
                     variant={
@@ -74,6 +78,12 @@ export default async function GeneratedContentPage({
                     risk: {post.riskScore}
                   </Badge>
                   <Badge>{post.status}</Badge>
+                  {isPlatformVideo(post.platform) &&
+                    (post.mediaUrl ? (
+                      <Badge variant="success">video ready</Badge>
+                    ) : (
+                      <Badge variant="warning">no video yet</Badge>
+                    ))}
                 </div>
                 <span className="text-xs text-zinc-500">{post.createdAt.toLocaleString()}</span>
               </div>
@@ -105,6 +115,35 @@ export default async function GeneratedContentPage({
                 </p>
               )}
 
+              {isPlatformVideo(post.platform) && post.mediaUrl && (
+                <div className="mt-3">
+                  <div className="mb-1 flex items-center gap-3 text-xs text-zinc-400">
+                    <span>Generated video:</span>
+                    <a
+                      href={post.mediaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-violet-400 hover:underline"
+                    >
+                      open in new tab
+                    </a>
+                    <a
+                      href={post.mediaUrl}
+                      download
+                      className="text-violet-400 hover:underline"
+                    >
+                      download
+                    </a>
+                  </div>
+                  <video
+                    controls
+                    preload="metadata"
+                    src={post.mediaUrl}
+                    className="max-h-96 rounded-lg border border-zinc-800"
+                  />
+                </div>
+              )}
+
               <div className="mt-4 flex flex-wrap gap-2">
                 <form action={approvePost.bind(null, post.id)}>
                   <Button type="submit" className="px-3 py-1 text-xs">
@@ -126,6 +165,14 @@ export default async function GeneratedContentPage({
                     Send to Discord
                   </Button>
                 </form>
+                {isPlatformVideo(post.platform) && (
+                  <form action={triggerGenerateVideo.bind(null, post.id)}>
+                    <GenerateVideoButton
+                      hasVideo={Boolean(post.mediaUrl)}
+                      enabled={videoEnabled}
+                    />
+                  </form>
+                )}
               </div>
             </Card>
           ))}

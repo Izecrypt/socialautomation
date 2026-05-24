@@ -1,8 +1,12 @@
 import OpenAI from "openai";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { prisma } from "@/lib/db";
 import type { Platform } from "@/generated/prisma/client";
 
 const IMAGE_PLATFORMS: Platform[] = ["x", "telegram", "instagram"];
+const PUBLIC_IMAGES_DIR = path.join(process.cwd(), "public", "media", "images");
 
 export function isImageGenerationEnabled(): boolean {
   return (
@@ -13,6 +17,22 @@ export function isImageGenerationEnabled(): boolean {
 
 export function shouldGenerateOnApprove(): boolean {
   return process.env.GENERATE_IMAGES_ON === "approve";
+}
+
+async function persistImage(
+  generatedPostId: string,
+  bytes: Buffer
+): Promise<string> {
+  await mkdir(PUBLIC_IMAGES_DIR, { recursive: true });
+  const fileName = `${generatedPostId}.png`;
+  await writeFile(path.join(PUBLIC_IMAGES_DIR, fileName), bytes);
+  return `/media/images/${fileName}`;
+}
+
+async function fetchUrlToBuffer(url: string): Promise<Buffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Image download ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
 }
 
 export async function generateImageForPost(
@@ -30,37 +50,52 @@ export async function generateImageForPost(
   }
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const model = process.env.OPENAI_IMAGE_MODEL ?? "dall-e-3";
+  const model = process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1";
+  const size = (process.env.OPENAI_IMAGE_SIZE ?? "1024x1024") as
+    | "1024x1024"
+    | "1024x1536"
+    | "1024x1792"
+    | "1536x1024"
+    | "1792x1024";
 
   try {
     const response = await client.images.generate({
       model,
       prompt: post.imagePrompt.slice(0, 4000),
       n: 1,
-      size: "1024x1024",
+      size,
     });
 
-    const url = response.data?.[0]?.url;
-    if (!url) {
-      return { ok: false, error: "No image URL returned" };
+    const item = response.data?.[0];
+    if (!item) return { ok: false, error: "No image returned" };
+
+    let bytes: Buffer;
+    if (item.b64_json) {
+      bytes = Buffer.from(item.b64_json, "base64");
+    } else if (item.url) {
+      bytes = await fetchUrlToBuffer(item.url);
+    } else {
+      return { ok: false, error: "Image response had no b64_json or url" };
     }
+
+    const publicUrl = await persistImage(generatedPostId, bytes);
 
     await prisma.generatedPost.update({
       where: { id: generatedPostId },
-      data: { mediaUrl: url },
+      data: { mediaUrl: publicUrl },
     });
 
     await prisma.mediaAsset.create({
       data: {
         generatedPostId,
         assetType: "image",
-        url,
+        url: publicUrl,
         prompt: post.imagePrompt,
         status: "generated",
       },
     });
 
-    return { ok: true, url };
+    return { ok: true, url: publicUrl };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Image generation failed";
     await prisma.publishLog.create({

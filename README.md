@@ -15,6 +15,7 @@ MVP for monitoring crypto/AI RSS feeds, scoring relevance, generating platform-s
 - **YouTube Shorts** — Separate generated post per RSS item (alongside TikTok)
 - **Crypto AI niche mode** — Auto-queue only AI-related stories when enabled
 - **Image generation** — Optional OpenAI DALL·E (`IMAGE_GENERATION_ENABLED=true`)
+- **Video generation** — Slideshow + OpenAI TTS voiceover via ffmpeg for TikTok / Instagram / Shorts (`VIDEO_GENERATION_ENABLED=true`)
 - **Headless approve** — `POST /api/queue/approve/:postId` for Make/cron
 - **Dashboard** — Sources, inbox, generated content, queue, settings, logs
 
@@ -59,6 +60,7 @@ Add `OPENAI_API_KEY` for real AI generation (otherwise mock content is used).
 | POST | `/api/queue/mark-posted` | same |
 | POST | `/api/queue/mark-failed` | same |
 | POST | `/api/ai/generate-from-rss/:rssItemId` | — |
+| POST | `/api/ai/generate-video/:postId` | `MAKE_PUBLISH_WEBHOOK_SECRET` |
 | POST | `/api/webhooks/platform-response` | `MAKE_PUBLISH_WEBHOOK_SECRET` |
 
 Internal RSS fetch (cron):
@@ -75,6 +77,7 @@ curl -H "x-cron-secret: $CRON_SECRET" http://localhost:3009/api/cron/fetch-rss
 - [AI prompts](docs/ai-prompts.md)
 - [Database](docs/database.md)
 - [VPS deployment](docs/deployment.md) (cron RSS fetch, PM2, Nginx)
+- [Video generation](docs/video-generation.md) (TikTok / IG / Shorts via DALL·E + TTS + ffmpeg)
 
 ## Scripts
 

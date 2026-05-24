@@ -32,6 +32,7 @@ export async function POST(
     platform: post.platform,
     sourceTitle: post.rssItem.title,
     articleUrl: post.rssItem.articleUrl,
+    mediaUrl: post.mediaUrl,
   });
 
   if (!result.ok) {

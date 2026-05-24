@@ -17,6 +17,11 @@ import {
   isImageGenerationEnabled,
   shouldGenerateOnApprove,
 } from "@/lib/ai/images";
+import {
+  generateVideoForPost,
+  isPlatformVideo,
+  isVideoGenerationEnabled,
+} from "@/lib/ai/video";
 
 export async function createSource(formData: FormData) {
   const raw = {
@@ -159,6 +164,7 @@ export async function approvePost(id: string) {
       platform: post.platform,
       sourceTitle: post.rssItem.title,
       articleUrl: post.rssItem.articleUrl,
+      mediaUrl: post.mediaUrl,
     });
     await prisma.publishLog.create({
       data: {
@@ -194,6 +200,7 @@ export async function publishPostToDiscordAction(id: string) {
     platform: post.platform,
     sourceTitle: post.rssItem.title,
     articleUrl: post.rssItem.articleUrl,
+    mediaUrl: post.mediaUrl,
   });
 
   await prisma.publishLog.create({
@@ -241,6 +248,25 @@ export async function schedulePost(id: string, scheduledAt: string) {
 export async function triggerRiskCheck(id: string) {
   await runRiskCheck(id);
   revalidatePath("/dashboard/generated-content");
+}
+
+export async function triggerGenerateVideo(id: string) {
+  if (!isVideoGenerationEnabled()) {
+    throw new Error(
+      "Video generation disabled. Set VIDEO_GENERATION_ENABLED=true and OPENAI_API_KEY in .env"
+    );
+  }
+  const post = await prisma.generatedPost.findUnique({ where: { id } });
+  if (!post) throw new Error("Post not found");
+  if (!isPlatformVideo(post.platform)) {
+    throw new Error(
+      `Video generation is only for tiktok / instagram / youtube_shorts (got ${post.platform})`
+    );
+  }
+  const result = await generateVideoForPost(id);
+  if (!result.ok) throw new Error(result.error);
+  revalidatePath("/dashboard/generated-content");
+  revalidatePath("/dashboard/content-queue");
 }
 
 export async function saveSchedulingSettings(formData: FormData) {
